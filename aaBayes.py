@@ -10,9 +10,8 @@
 
 import numpy as np
 from scipy.misc import comb
+import time
 
-
-emptyLandUnitList = LandUnitList()
 
 def gen_dice_pdf(N,diceLim):
     P = diceLim/6
@@ -55,6 +54,12 @@ class LandUnitList(object):
                     self.bombers==other.bombers)
         except:
             raise(Exception('Failed equality check on LandUnitList. Possible Type error?'))
+
+    def __str__(self):
+        outString = 'Unit List:\n'
+        for item in self.__dict__:
+            outString+='\t'+item+':\t'+str(self.__dict__[item])+'\n'
+        return outString
         
         
     def update_total(self):
@@ -86,16 +91,15 @@ class LandUnitList(object):
         return generalized_battle_pdf(nOnes, nTwos, nThrees, nFours)
 
     def get_pdf_defense(self):
-        #ones
         nOnes = self.bombers
         nTwos = self.artillery+self.tanks+self.infantry
         nThrees = 0
         nFours = self.planes
 
-        return generalized_battle_pdf(pdfOnes, pdfTwos, pdfThrees, pdfFours)
+        return generalized_battle_pdf(nOnes, nTwos, nThrees, nFours)
 
     def allocate_hits(self, nHits, method='normal'):
-        tmpUnits = [self.infantry, self,artillery, self.tanks, self.planes, self.bombers]
+        tmpUnits = [self.infantry, self.artillery, self.tanks, self.planes, self.bombers]
         if method=='normal':
             if nHits>self.totalUnits:
                 return LandUnitList(offense=self.offense)
@@ -133,34 +137,36 @@ class AANode(object):
         self.update_total()
 
     def update_total(self):
-        self.update_total = self.attackingUnits.update_total() + \
+        self.totalUnits = self.attackingUnits.update_total() + \
                             self.defendingUnits.update_total()
-        return self.update_total
+        return self.totalUnits
 
-    def get_probability(self, force==False):
+    def get_probability(self, force=False):
         if not self.probability==None and force==False:
             return self.probability
         
-        if parentList==[]:
+        if self.parentList==[]:
+            #print('No parents:')
+            #print([self.attackingUnits.infantry, self.defendingUnits.infantry])
             self.probability=1
         else:
             p=0
-            for parent, pcgp in parentList:
+            for parent, pcgp in self.parentList:
                 p+= parent.get_probability()*pcgp
             self.probability=p
         return self.probability
     
     def generate_children(self):
         #FIXME
-        pdfAtt = attackingUnits.gen_pdf()
-        pdfDef = defendingUnits.gen_pdf()
+        pdfAtt = self.attackingUnits.get_pdf()
+        pdfDef = self.defendingUnits.get_pdf()
         #must normalize all probabilities to the domain where there exists at least
         #one hit
         normFactor = 1-pdfAtt[0]*pdfDef[0]
-        childAttUnits = [[attackingUnits.allocate_hits(i), prob]
-                         for i, prob in enumerate(pdfAtt)]
-        childDefUnits = [[defendingUnits.allocate_hits(i), prob]
+        childAttUnits = [[self.attackingUnits.allocate_hits(i), prob]
                          for i, prob in enumerate(pdfDef)]
+        childDefUnits = [[self.defendingUnits.allocate_hits(i), prob]
+                         for i, prob in enumerate(pdfAtt)]
         #FIXME: remove duplicates from overkill
         
         childList = [[AANode(attUnits, defUnits), aP*dP/normFactor]
@@ -176,18 +182,17 @@ class AANetwork(object):
         self.results = []
 
     def simulate(self):
-        while frontier!=[]:
-            currentNode = frontier.pop(0)
+        while self.frontier!=[]:
+            currentNode = self.frontier.pop(0)
             currentNode.get_probability()
-
+            
             #handle results case
-            if (currentNode.attackingUnits == emptyUnits or
-                currentNode.defendingUnits == emptyUnits):
-                results.append(currentNode)
+            if (currentNode.attackingUnits == emptyLandUnitList or
+                currentNode.defendingUnits == emptyLandUnitList):
+                self.results.append(currentNode)
                 continue
             
             childList = currentNode.generate_children()
-
             for child, pcgp in childList:
                 #search frontier for matching child. If found, add currentNode to parentList
                 #if not found, insert in frontier according to size.
@@ -199,25 +204,51 @@ class AANetwork(object):
                 #two linear searches. Lets go from O(mn) to O(log(mn)) in this
                 #section...
                 flag = False
-                for node in frontier:
+                for node in self.frontier:
                     if child.attackingUnits==node.attackingUnits and\
                        child.defendingUnits==node.defendingUnits:
                         flag = True
                         node.parentList.append([currentNode, pcgp])
                         break
                 if not flag:
+                    child.parentList.append([currentNode, pcgp])
                     numUnits = currentNode.update_total()
-                    for i in range(len(frontier)):
-                        if numUnits<=frontier[i].update_total():
-                            frontier.insert(i+1,currentNode)
+                    if self.frontier==[]:
+                        self.frontier.append(child)
+                    else:
+                        for i in range(len(self.frontier)):
+                            if (numUnits<=self.frontier[i].update_total() or
+                                i==len(self.frontier)-1):
+                                self.frontier.insert(i+1,child)
+        print('\ncompleted simulation')
+        return self.results
                     
                         
+emptyLandUnitList = LandUnitList()
         
     
 
 if __name__=='__main__':
-    testList = LandUnitList(infantry=1, tanks=4, planes=1)
-    a = testList.get_pdf()
-    print(a)
-    print(a.sum())
-    print(testList.get_median_hits())
+    testAttack = LandUnitList(infantry=30)
+    testDefense = LandUnitList(infantry=30, offense=False)
+    
+    rootNode = AANode(testAttack, testDefense)
+    
+    testNetwork = AANetwork()
+    testNetwork.frontier.append(rootNode)
+
+    startTime = time.clock()
+    results = testNetwork.simulate()
+    endTime = time.clock()
+    print('completed in %f seconds' %(endTime-startTime))
+    print('\n\n')
+    checkSum = 0
+    for node in results:
+        #print(str(node.attackingUnits)+str(node.defendingUnits)+
+        #      "Probability: "+str(node.get_probability()))
+        #print('\n')
+        print([node.attackingUnits.infantry, node.defendingUnits.infantry,
+               node.get_probability()])
+        checkSum+=node.get_probability()
+    
+    print(checkSum)
