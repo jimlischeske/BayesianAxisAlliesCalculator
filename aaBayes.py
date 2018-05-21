@@ -166,19 +166,15 @@ class AANode(object):
         return self.probability
     
     def generate_children(self):
-        #FIXME
         pdfAtt = self.attackingUnits.get_pdf()
         pdfDef = self.defendingUnits.get_pdf()
 
-        #truncate pdfs to reduce complexity
-        """
         aUnits = self.attackingUnits.update_total()
         dUnits = self.defendingUnits.update_total()
         if aUnits>dUnits:
             pdfAtt = pdfAtt[:dUnits] + [ sum(pdfAtt[dUnits:]) ]
         elif dUnits>aUnits:
             pdfDef = pdfDef[:aUnits] + [ sum( pdfDef[aUnits:] ) ]
-        """
         
         #must normalize all probabilities to the domain where there exists at least
         #one hit
@@ -187,7 +183,6 @@ class AANode(object):
                          for i, prob in enumerate(pdfDef)]
         childDefUnits = [[self.defendingUnits.allocate_hits(i), prob]
                          for i, prob in enumerate(pdfAtt)]
-        #FIXME: remove duplicates from overkill
         
         childList = [[AANode(attUnits, defUnits), aP*dP/normFactor]
                      for attUnits, aP in childAttUnits
