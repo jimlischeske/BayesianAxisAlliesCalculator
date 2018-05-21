@@ -31,7 +31,7 @@ def generalized_battle_pdf(nOnes, nTwos, nThrees, nFours):
                     ind = i+j+k+l
                     prob = pdfOnes[i]*pdfTwos[j]*pdfThrees[k]*pdfFours[l]
                     pdfFinal[ind]+=prob
-    return pdfFinal
+    return pdfFinal.tolist()
                     
     
 
@@ -43,6 +43,7 @@ class LandUnitList(object):
         self.planes=planes
         self.bombers=bombers
         self.offense=offense
+        self.antiAir=0
         self.update_total()
 
     def __eq__(self, other):
@@ -104,18 +105,20 @@ class LandUnitList(object):
             if nHits>self.totalUnits:
                 return LandUnitList(offense=self.offense)
             i = 0
-            while(nHits>0):
+            while(nHits>0 and i<5):
                 if nHits>=tmpUnits[i]:
                     nHits -= tmpUnits[i]
                     tmpUnits[i]=0
                 else:
                     tmpUnits[i] -= nHits
                     nHits=0
+                i+=1
             return LandUnitList(infantry=tmpUnits[0], artillery=tmpUnits[1],
                                 tanks=tmpUnits[2], planes=tmpUnits[3], bombers=tmpUnits[4],
                                 offense=self.offense)
         else:
             raise(Warning('Hit allocation method not defined.'))
+
 
         
 class SeaUnitList(object):
@@ -135,6 +138,12 @@ class AANode(object):
         self.defendingUnits = defendingUnits
         self.landBattle = landBattle
         self.update_total()
+
+    def __repr__(self):
+        return ('a: %i, d: %i' %(self.attackingUnits.update_total(), self.defendingUnits.update_total()))
+
+    def __str__(self):
+        return str(self.attackingUnits)+str(self.defendingUnits)
 
     def update_total(self):
         self.totalUnits = self.attackingUnits.update_total() + \
@@ -160,6 +169,17 @@ class AANode(object):
         #FIXME
         pdfAtt = self.attackingUnits.get_pdf()
         pdfDef = self.defendingUnits.get_pdf()
+
+        #truncate pdfs to reduce complexity
+        """
+        aUnits = self.attackingUnits.update_total()
+        dUnits = self.defendingUnits.update_total()
+        if aUnits>dUnits:
+            pdfAtt = pdfAtt[:dUnits] + [ sum(pdfAtt[dUnits:]) ]
+        elif dUnits>aUnits:
+            pdfDef = pdfDef[:aUnits] + [ sum( pdfDef[aUnits:] ) ]
+        """
+        
         #must normalize all probabilities to the domain where there exists at least
         #one hit
         normFactor = 1-pdfAtt[0]*pdfDef[0]
@@ -176,14 +196,26 @@ class AANode(object):
                             defUnits==self.defendingUnits)]
         return childList
 
+    def precombat_generate_children(self):
+        #FIXME: precombat is different for sea and for land. Additionally
+        #complicated by needing to distinguish hit allocation between bombers
+        #and fighters from anti air. Not sure how to implement. For now, I'll
+        # just leave this as a placeholder.
+        return [[self],1]
+
 class AANetwork(object):
-    def __init__(self):
-        self.frontier = []
+    def __init__(self, rootNode):
+        self.rootNode = rootNode
         self.results = []
 
     def simulate(self):
-        while self.frontier!=[]:
-            currentNode = self.frontier.pop(0)
+        frontier = [rootNode]
+        #start with precombat, then do the loop
+
+        
+        #now do the loop
+        while frontier!=[]:
+            currentNode = frontier.pop(0)
             currentNode.get_probability()
             
             #handle results case
@@ -204,7 +236,7 @@ class AANetwork(object):
                 #two linear searches. Lets go from O(mn) to O(log(mn)) in this
                 #section...
                 flag = False
-                for node in self.frontier:
+                for node in frontier:
                     if child.attackingUnits==node.attackingUnits and\
                        child.defendingUnits==node.defendingUnits:
                         flag = True
@@ -213,29 +245,80 @@ class AANetwork(object):
                 if not flag:
                     child.parentList.append([currentNode, pcgp])
                     numUnits = currentNode.update_total()
-                    if self.frontier==[]:
-                        self.frontier.append(child)
+                    if frontier==[]:
+                        frontier.append(child)
                     else:
-                        for i in range(len(self.frontier)):
-                            if (numUnits<=self.frontier[i].update_total() or
-                                i==len(self.frontier)-1):
-                                self.frontier.insert(i+1,child)
+                        for i in range(len(frontier)):
+                            if (numUnits<=frontier[i].update_total() or
+                                i==len(frontier)-1):
+                                frontier.insert(i+1,child)
         print('\ncompleted simulation')
+        #sort by attacker descending, then defender ascending
+        self.results = sorted(self.results, key = lambda node:
+                              (node.attackingUnits.update_total() - node.defendingUnits.update_total()),
+                               reverse=True)
         return self.results
-                    
+
+    def print_results(self):
+        if self.results == []:
+            print('No results available. Try running the simulation.')
+        else:
+            for node in self.results:
+                print('Probability: ' + str(node.get_probability()) + '\n' +
+                      'Attackers left: ' + str(node.attackingUnits.update_total()) + '\n' +
+                      'Defenders left: ' + str(node.attackingUnits.update_total()) + '\n')
+
+    def histogram_results(self):
+        if self.results == []:
+            print('No results available. Try running the simulation.')
+        else:
+            #generate the graph
+            print('nothign here yet')
+
+    def get_result_statistics(self):
+        # define median result, probability of win, big win, big loss, return as dict
+        median = None
+        cumProb = 0
+        bigWin = None
+        winProb = None
+        bigLoss = None
+        bwThresh = int(self.rootNode.attackingUnits.update_total()/2) #make a decision on rounding
+        blThresh = int(self.rootNode.defendingUnits.update_total()/2)
+        
+        
+        for node in self.results:
+            cumProb += node.get_probability()
+            if median == None and cumProb>=0.5:
+                median = node
+            if bigWin == None and node.attackingUnits.update_total()==bwThresh:
+                bigWin = cumProb
+            if bigLoss == None and node.defendingUnits.update_total()==blThresh:
+                bigLoss = 1 - cumProb
+            if winProb ==None and node.defendingUnits.update_total()==0 \
+               and node.attackingUnits.update_total()==1:
+                winProb = cumProb
+        return {'median':median, 'bigWin':bigWin, 'winProb':winProb, 'bigLoss': bigLoss}
+        
+            
+                
+        
+        
                         
 emptyLandUnitList = LandUnitList()
         
     
 
 if __name__=='__main__':
-    testAttack = LandUnitList(infantry=30)
-    testDefense = LandUnitList(infantry=30, offense=False)
+    #testAttack = LandUnitList(infantry=3, tanks=1)
+    #testDefense = LandUnitList(infantry=3, offense=False)
+    testAttack = LandUnitList(infantry=3, tanks=1, planes=3, bombers=1)
+    testDefense = LandUnitList(infantry=3, tanks=5, offense=False)
+    #testAttack = LandUnitList(infantry=30)
+    #testDefense = LandUnitList(infantry=30, offense=False)
     
     rootNode = AANode(testAttack, testDefense)
     
-    testNetwork = AANetwork()
-    testNetwork.frontier.append(rootNode)
+    testNetwork = AANetwork(rootNode)
 
     startTime = time.clock()
     results = testNetwork.simulate()
@@ -245,10 +328,13 @@ if __name__=='__main__':
     checkSum = 0
     for node in results:
         #print(str(node.attackingUnits)+str(node.defendingUnits)+
-        #      "Probability: "+str(node.get_probability()))
+        #      'Probability: '+str(node.get_probability()))
         #print('\n')
-        print([node.attackingUnits.infantry, node.defendingUnits.infantry,
-               node.get_probability()])
+        #print([node.attackingUnits.update_total(), node.defendingUnits.update_total(),
+        #       node.get_probability()])
         checkSum+=node.get_probability()
+    result_stats = testNetwork.get_result_statistics()
+    print(result_stats)
+    print(result_stats['median'].attackingUnits, result_stats['median'].defendingUnits)
     
     print(checkSum)
