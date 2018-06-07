@@ -8,14 +8,13 @@
 #
 ####################################################################
 
-import numpy as np
 from scipy.misc import comb
 import time
 
 
 def gen_dice_pdf(N,diceLim):
     P = diceLim/6
-    return np.asarray([comb(N,i)* P**i * (1-P)**(N-i) for i in range(N+1)])
+    return [comb(N,i)* P**i * (1-P)**(N-i) for i in range(N+1)]
 
 def generalized_battle_pdf(nOnes, nTwos, nThrees, nFours):
     pdfOnes = gen_dice_pdf(nOnes, 1)
@@ -23,15 +22,15 @@ def generalized_battle_pdf(nOnes, nTwos, nThrees, nFours):
     pdfThrees = gen_dice_pdf(nThrees, 3)
     pdfFours = gen_dice_pdf(nFours, 4)
 
-    pdfFinal = np.zeros(len(pdfOnes)+len(pdfTwos)+len(pdfThrees)+len(pdfFours)-4+1)
-    for i in range(len(pdfOnes)):
-        for j in range(len(pdfTwos)):
-            for k in range(len(pdfThrees)):
-                for l in range(len(pdfFours)):
+    pdfFinal = [0 for i in range(nOnes+nTwos+nThrees+nFours+1)]
+    for i in range(nOnes+1):
+        for j in range(nTwos+1):
+            for k in range(nThrees+1):
+                for l in range(nFours+1):
                     ind = i+j+k+l
                     prob = pdfOnes[i]*pdfTwos[j]*pdfThrees[k]*pdfFours[l]
                     pdfFinal[ind]+=prob
-    return pdfFinal.tolist()
+    return pdfFinal
                     
     
 
@@ -155,8 +154,6 @@ class AANode(object):
             return self.probability
         
         if self.parentList==[]:
-            #print('No parents:')
-            #print([self.attackingUnits.infantry, self.defendingUnits.infantry])
             self.probability=1
         else:
             p=0
@@ -166,19 +163,15 @@ class AANode(object):
         return self.probability
     
     def generate_children(self):
-        #FIXME
         pdfAtt = self.attackingUnits.get_pdf()
         pdfDef = self.defendingUnits.get_pdf()
 
-        #truncate pdfs to reduce complexity
-        """
         aUnits = self.attackingUnits.update_total()
         dUnits = self.defendingUnits.update_total()
         if aUnits>dUnits:
             pdfAtt = pdfAtt[:dUnits] + [ sum(pdfAtt[dUnits:]) ]
         elif dUnits>aUnits:
             pdfDef = pdfDef[:aUnits] + [ sum( pdfDef[aUnits:] ) ]
-        """
         
         #must normalize all probabilities to the domain where there exists at least
         #one hit
@@ -187,7 +180,6 @@ class AANode(object):
                          for i, prob in enumerate(pdfDef)]
         childDefUnits = [[self.defendingUnits.allocate_hits(i), prob]
                          for i, prob in enumerate(pdfAtt)]
-        #FIXME: remove duplicates from overkill
         
         childList = [[AANode(attUnits, defUnits), aP*dP/normFactor]
                      for attUnits, aP in childAttUnits
@@ -273,7 +265,7 @@ class AANetwork(object):
             print('No results available. Try running the simulation.')
         else:
             #generate the graph
-            print('nothign here yet')
+            print('nothing here yet')
 
     def get_result_statistics(self):
         # define median result, probability of win, big win, big loss, return as dict
@@ -282,7 +274,7 @@ class AANetwork(object):
         bigWin = None
         winProb = None
         bigLoss = None
-        bwThresh = int(self.rootNode.attackingUnits.update_total()/2) #make a decision on rounding
+        bwThresh = int(self.rootNode.attackingUnits.update_total()/2) #FIXME: make a decision on rounding
         blThresh = int(self.rootNode.defendingUnits.update_total()/2)
         
         
@@ -297,25 +289,16 @@ class AANetwork(object):
             if winProb ==None and node.defendingUnits.update_total()==0 \
                and node.attackingUnits.update_total()==1:
                 winProb = cumProb
-        return {'median':median, 'bigWin':bigWin, 'winProb':winProb, 'bigLoss': bigLoss}
-        
-            
-                
-        
-        
-                        
+
+        return {'median':median, 'bigWin':bigWin, 'winProb':winProb, 'bigLoss': bigLoss, 'checksum': cumProb}
+
+
 emptyLandUnitList = LandUnitList()
-        
-    
+
 
 if __name__=='__main__':
-    #testAttack = LandUnitList(infantry=3, tanks=1)
-    #testDefense = LandUnitList(infantry=3, offense=False)
-    testAttack = LandUnitList(infantry=3, tanks=1, planes=3, bombers=1)
-    testDefense = LandUnitList(infantry=3, tanks=5, offense=False)
-    #testAttack = LandUnitList(infantry=30)
-    #testDefense = LandUnitList(infantry=30, offense=False)
-    
+    testAttack = LandUnitList(infantry=2, artillery=1, tanks=1)
+    testDefense = LandUnitList(infantry=4, offense=False)
     rootNode = AANode(testAttack, testDefense)
     
     testNetwork = AANetwork(rootNode)
@@ -325,16 +308,8 @@ if __name__=='__main__':
     endTime = time.clock()
     print('completed in %f seconds' %(endTime-startTime))
     print('\n\n')
-    checkSum = 0
-    for node in results:
-        #print(str(node.attackingUnits)+str(node.defendingUnits)+
-        #      'Probability: '+str(node.get_probability()))
-        #print('\n')
-        #print([node.attackingUnits.update_total(), node.defendingUnits.update_total(),
-        #       node.get_probability()])
-        checkSum+=node.get_probability()
+
     result_stats = testNetwork.get_result_statistics()
     print(result_stats)
     print(result_stats['median'].attackingUnits, result_stats['median'].defendingUnits)
     
-    print(checkSum)
