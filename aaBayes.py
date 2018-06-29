@@ -60,6 +60,13 @@ class LandUnitList(object):
         for item in self.__dict__:
             outString+='\t'+item+':\t'+str(self.__dict__[item])+'\n'
         return outString
+
+    def is_empty(self):
+        if (self.infantry==0 and self.artillery==0 and self.tanks==0
+            and self.planes==0 and self.bombers==0):
+            return True
+        else: return False
+
         
         
     def update_total(self):
@@ -211,8 +218,8 @@ class AANetwork(object):
             currentNode.get_probability()
             
             #handle results case
-            if (currentNode.attackingUnits == emptyLandUnitList or
-                currentNode.defendingUnits == emptyLandUnitList):
+            if (currentNode.attackingUnits.is_empty() or
+                currentNode.defendingUnits.is_empty()):
                 self.results.append(currentNode)
                 continue
             
@@ -291,9 +298,6 @@ class AANetwork(object):
                 winProb = cumProb
 
         return {'median':median, 'bigWin':bigWin, 'winProb':winProb, 'bigLoss': bigLoss, 'checksum': cumProb}
-
-
-emptyLandUnitList = LandUnitList()
 
 
 if __name__=='__main__':
